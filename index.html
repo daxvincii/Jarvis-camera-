@@ -354,21 +354,23 @@ document.getElementById("skip").onclick = ()=>document.getElementById("start").r
 document.getElementById("go").onclick = async ()=>{
   const err = document.getElementById("err");
   try{
-    err.textContent = "Chargement du modèle de détection…";
+    err.style.color = "var(--muted)";
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error("ce navigateur ne donne pas accès à la caméra. Ouvre la page dans Safari");
+    err.textContent = "Accès à la caméra…";
+    const stream = await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:720},facingMode:"user"}});
+    video.srcObject = stream; await video.play();
+    err.textContent = "Caméra OK · chargement du modèle de détection (10 à 20 s)…";
     const {FilesetResolver, HandLandmarker} = await import(new URL("vision_bundle.mjs", location.href).href);
     const fileset = await FilesetResolver.forVisionTasks(new URL("wasm", location.href).href);
     const opts = d => ({ baseOptions:{modelAssetPath:new URL("hand_landmarker_model.wasm", location.href).href, delegate:d},
       runningMode:"VIDEO", numHands:2, minHandDetectionConfidence:.6, minTrackingConfidence:.5 });
     try { landmarker = await HandLandmarker.createFromOptions(fileset, opts("GPU")); }
     catch(g){ console.warn("GPU indisponible, passage au CPU", g); landmarker = await HandLandmarker.createFromOptions(fileset, opts("CPU")); }
-    err.textContent = "Accès à la caméra…";
-    const stream = await navigator.mediaDevices.getUserMedia({video:{width:1280,height:720,facingMode:"user"}});
-    video.srcObject = stream; await video.play();
     document.getElementById("start").remove();
     statusEl.textContent = "en ligne";
     requestAnimationFrame(loop);
   }catch(e){
-    console.error(e);
+    console.error(e); err.style.color = "";
     err.textContent = "Erreur : " + (e.name==="NotAllowedError"||e.name==="SecurityError" ? "accès à la caméra refusé. Autorise la caméra pour ce site dans les réglages du navigateur." : (e.message||e) + ". Vérifie la connexion et l'accès à la caméra.");
   }
 };
