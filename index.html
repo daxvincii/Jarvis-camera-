@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Jarvis Mains</title>
+<style>
+  :root{
+    --bg:#02070c; --glow:#38e1ff; --glow2:#7cf7c9; --text:#e6fbff; --muted:#8fb7c4;
+    --tile:rgba(10,40,55,.45); --tile-border:rgba(56,225,255,.45); --grab:#ffcf4a;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--text);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;user-select:none}
+  #video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);
+    filter:saturate(.4) brightness(.55) contrast(1.1)}
+  #fx{position:fixed;inset:0;pointer-events:none;
+    background:radial-gradient(ellipse at center,transparent 40%,rgba(0,10,20,.75) 100%),
+      repeating-linear-gradient(0deg,rgba(56,225,255,.04) 0 1px,transparent 1px 4px)}
+  #overlay{position:fixed;inset:0;pointer-events:none;z-index:50}
+  .tile{position:absolute;width:240px;min-height:150px;padding:16px 18px;border-radius:16px;
+    background:var(--tile);border:1px solid var(--tile-border);
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+    box-shadow:0 0 18px rgba(56,225,255,.18), inset 0 0 22px rgba(56,225,255,.08);
+    transition:transform .15s ease, box-shadow .15s ease, border-color .15s;
+    transform-origin:center;cursor:grab}
+  .tile h3{margin:0 0 8px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--glow)}
+  .tile .big{font-size:38px;font-weight:300;line-height:1.1}
+  .tile .small{font-size:13px;color:var(--muted);margin-top:6px}
+  .tile.hover{border-color:var(--glow);box-shadow:0 0 28px rgba(56,225,255,.45), inset 0 0 22px rgba(56,225,255,.15)}
+  .tile.grabbed{border-color:var(--grab);transform:scale(1.07);cursor:grabbing;
+    box-shadow:0 20px 50px rgba(0,0,0,.6),0 0 36px rgba(255,207,74,.5)}
+  .bar{height:6px;border-radius:3px;background:rgba(255,255,255,.1);margin:8px 0 2px;overflow:hidden}
+  .bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--glow),var(--glow2))}
+  #hud{position:fixed;left:16px;top:14px;z-index:60;font-size:12px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--glow)}
+  #hud b{color:var(--text);font-weight:600}
+  #help{position:fixed;right:16px;bottom:14px;z-index:60;max-width:330px;font-size:13px;line-height:1.5;
+    color:var(--muted);background:rgba(0,20,30,.55);border:1px solid rgba(56,225,255,.25);
+    padding:10px 14px;border-radius:12px}
+  #help b{color:var(--text)}
+  #start{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:18px;background:radial-gradient(circle,#06202c,#02070c);text-align:center;padding:16px}
+  #start h1{margin:0;font-weight:200;letter-spacing:.3em;color:var(--glow);font-size:clamp(28px,6vw,54px)}
+  #start p{margin:0;color:var(--muted);max-width:460px}
+  #start button{font:inherit;font-size:16px;padding:12px 28px;border-radius:999px;cursor:pointer;
+    color:var(--bg);background:var(--glow);border:0;box-shadow:0 0 30px rgba(56,225,255,.6)}
+  #err{color:#ff8a8a;max-width:460px}
+</style>
+</head>
+<body>
+<video id="video" autoplay playsinline muted></video>
+<div id="fx"></div>
+<div id="desk"></div>
+<canvas id="overlay"></canvas>
+<div id="hud">J.A.R.V.I.S · mains : <b id="hands">0</b> · <span id="status">initialisation</span></div>
+<div id="help"><b>Pointer :</b> lève l'index.<br><b>Attraper :</b> pince pouce + index sur une tuile, bouge, relâche pour poser.<br><b>Agrandir :</b> pince la même tuile avec les deux mains et écarte-les.<br><span style="opacity:.7">La souris marche aussi, pour tester.</span></div>
+<div id="start">
+  <h1>J.A.R.V.I.S</h1>
+  <p>Autorise la caméra, place-toi à environ 60 cm de l'écran avec un bon éclairage, puis pince les tuiles pour les déplacer.</p>
+  <button id="go">Activer la caméra</button>
+  <div id="err"></div>
+</div>
+
+<script type="module">
+const TILES = [
+  {id:"clock", title:"Heure", html:`<div class="big" data-clock>--:--</div><div class="small" data-date></div>`},
+  {id:"weather", title:"Météo", html:`<div class="big">-4°</div><div class="small">Neige légère · ressenti -9°</div>`},
+  {id:"music", title:"Musique", html:`<div style="font-size:18px">Back in Black</div><div class="small">AC/DC</div><div class="bar"><i style="width:42%"></i></div><div class="small">1:46 / 4:15</div>`},
+  {id:"system", title:"Système", html:`<div class="small">Processeur</div><div class="bar"><i data-cpu style="width:30%"></i></div><div class="small">Mémoire</div><div class="bar"><i style="width:64%"></i></div><div class="small">Batterie 87 %</div>`},
+  {id:"agenda", title:"Agenda", html:`<div class="small">09:00 · Réunion d'équipe</div><div class="small">12:30 · Dîner</div><div class="small">16:00 · Appel client</div>`},
+  {id:"notes", title:"Notes", html:`<div class="small">• Calibrer les gestes</div><div class="small">• Ajouter la commande vocale</div><div class="small">• Construire l'armure</div>`},
+];
+
+const desk = document.getElementById("desk");
+const tiles = [];
+let z = 10;
+function layout(){
+  const W = innerWidth, H = innerHeight, cols = W < 700 ? 2 : 3;
+  TILES.forEach((t,i)=>{
+    const el = document.createElement("div");
+    el.className = "tile"; el.innerHTML = `<h3>${t.title}</h3>${t.html}`;
+    desk.appendChild(el);
+    const c = i % cols, r = Math.floor(i / cols);
+    const cw = W / cols;
+    const s = {el, x: Math.max(8, c*cw + cw/2 - 120), y: 90 + r*200, scale:1, grabbedBy:[]};
+    tiles.push(s); place(s);
+  });
+}
+function place(t){
+  t.el.style.left = t.x + "px"; t.el.style.top = t.y + "px";
+  t.el.style.width = (240*t.scale) + "px";
+  t.el.style.fontSize = (t.scale*100) + "%";
+}
+layout();
+
+// live content
+function tick(){
+  const d = new Date();
+  document.querySelectorAll("[data-clock]").forEach(e=>e.textContent=d.toLocaleTimeString("fr-CA",{hour:"2-digit",minute:"2-digit",second:"2-digit"}));
+  document.querySelectorAll("[data-date]").forEach(e=>e.textContent=d.toLocaleDateString("fr-CA",{weekday:"long",day:"numeric",month:"long"}));
+  document.querySelectorAll("[data-cpu]").forEach(e=>e.style.width=(20+Math.random()*40)+"%");
+}
+tick(); setInterval(tick,1000);
+
+function tileAt(x,y){
+  for (const t of [...tiles].sort((a,b)=>(+b.el.style.zIndex||0)-(+a.el.style.zIndex||0))){
+    const r = t.el.getBoundingClientRect();
+    if (x>=r.left && x<=r.right && y>=r.top && y<=r.bottom) return t;
+  }
+  return null;
+}
+
+// ---- pointer logic shared by hands and mouse ----
+// a "pointer" = {x,y,pinch,grab:{tile,dx,dy}|null}
+function grabStart(p){
+  const t = tileAt(p.x,p.y); if(!t) return;
+  p.grab = {tile:t, dx:p.x - t.x, dy:p.y - t.y};
+  t.grabbedBy.push(p);
+  t.el.style.zIndex = ++z; t.el.classList.add("grabbed");
+  if (t.grabbedBy.length === 2){
+    const [a,b] = t.grabbedBy;
+    t.twoStart = {dist: Math.hypot(a.x-b.x,a.y-b.y), scale:t.scale};
+  }
+}
+function grabEnd(p){
+  if(!p.grab) return;
+  const t = p.grab.tile;
+  t.grabbedBy = t.grabbedBy.filter(q=>q!==p);
+  if (t.grabbedBy.length===1){ const q=t.grabbedBy[0]; q.grab.dx=q.x-t.x; q.grab.dy=q.y-t.y; }
+  if (!t.grabbedBy.length) t.el.classList.remove("grabbed");
+  t.twoStart = null; p.grab = null;
+}
+function grabMove(p){
+  if(!p.grab) return;
+  const t = p.grab.tile;
+  if (t.grabbedBy.length===2 && t.twoStart){
+    const [a,b] = t.grabbedBy;
+    const d = Math.hypot(a.x-b.x,a.y-b.y);
+    t.scale = Math.min(2.2, Math.max(.6, t.twoStart.scale * d / t.twoStart.dist));
+    const w = 240*t.scale;
+    t.x = (a.x+b.x)/2 - w/2; t.y = (a.y+b.y)/2 - 60*t.scale;
+  } else if (t.grabbedBy.length===1){
+    t.x = p.x - p.grab.dx; t.y = p.y - p.grab.dy;
+  }
+  place(t);
+}
+
+// mouse fallback
+const mouse = {x:0,y:0,pinch:false,grab:null};
+addEventListener("mousedown",e=>{mouse.x=e.clientX;mouse.y=e.clientY;mouse.pinch=true;grabStart(mouse)});
+addEventListener("mousemove",e=>{mouse.x=e.clientX;mouse.y=e.clientY;grabMove(mouse)});
+addEventListener("mouseup",()=>{mouse.pinch=false;grabEnd(mouse)});
+addEventListener("touchstart",e=>{const t=e.touches[0];mouse.x=t.clientX;mouse.y=t.clientY;mouse.pinch=true;grabStart(mouse)},{passive:true});
+addEventListener("touchmove",e=>{const t=e.touches[0];mouse.x=t.clientX;mouse.y=t.clientY;grabMove(mouse);if(mouse.grab)e.preventDefault()},{passive:false});
+addEventListener("touchend",()=>{mouse.pinch=false;grabEnd(mouse)});
+
+// ---- camera + MediaPipe ----
+const video = document.getElementById("video");
+const canvas = document.getElementById("overlay");
+const ctx = canvas.getContext("2d");
+const statusEl = document.getElementById("status"), handsEl = document.getElementById("hands");
+function resize(){ canvas.width = innerWidth*devicePixelRatio; canvas.height = innerHeight*devicePixelRatio; }
+addEventListener("resize",resize); resize();
+
+const handPointers = {}; // keyed by handedness label
+let landmarker;
+
+document.getElementById("go").onclick = async ()=>{
+  const err = document.getElementById("err");
+  try{
+    err.textContent = "Chargement du modèle de détection…";
+    const {FilesetResolver, HandLandmarker} = await import(new URL("vision_bundle.mjs", location.href).href);
+    const fileset = await FilesetResolver.forVisionTasks(new URL("wasm", location.href).href);
+    const opts = d => ({
+      baseOptions:{modelAssetPath:new URL("hand_landmarker_model.wasm", location.href).href, delegate:d},
+      runningMode:"VIDEO", numHands:2,
+      minHandDetectionConfidence:.6, minTrackingConfidence:.5
+    });
+    try { landmarker = await HandLandmarker.createFromOptions(fileset, opts("GPU")); }
+    catch(g){ console.warn("GPU indisponible, passage au CPU", g); landmarker = await HandLandmarker.createFromOptions(fileset, opts("CPU")); }
+    err.textContent = "Accès à la caméra…";
+    const stream = await navigator.mediaDevices.getUserMedia({video:{width:1280,height:720,facingMode:"user"}});
+    video.srcObject = stream; await video.play();
+    document.getElementById("start").remove();
+    statusEl.textContent = "en ligne";
+    requestAnimationFrame(loop);
+  }catch(e){
+    console.error(e);
+    err.textContent = "Erreur : " + (e.name==="NotAllowedError"||e.name==="SecurityError" ? "accès à la caméra refusé ici. Ouvre la page sur ton ordinateur dans Chrome ou Edge." : (e.message||e) + ". Vérifie la connexion et l'accès à la caméra.");
+  }
+};
+
+// map normalized landmark -> screen px, matching object-fit:cover + mirror
+function toScreen(lm){
+  const vw = video.videoWidth, vh = video.videoHeight, W = innerWidth, H = innerHeight;
+  const s = Math.max(W/vw, H/vh), dw = vw*s, dh = vh*s;
+  return {x:(W-dw)/2 + (1-lm.x)*dw, y:(H-dh)/2 + lm.y*dh};
+}
+
+let lastT = -1;
+function loop(){
+  requestAnimationFrame(loop);
+  if (video.currentTime === lastT) return; lastT = video.currentTime;
+  const res = landmarker.detectForVideo(video, performance.now());
+  ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+  ctx.clearRect(0,0,innerWidth,innerHeight);
+  const seen = new Set();
+  handsEl.textContent = res.landmarks.length;
+
+  res.landmarks.forEach((lms,i)=>{
+    const key = res.handedness[i]?.[0]?.categoryName || ("h"+i);
+    seen.add(key);
+    const pts = lms.map(toScreen);
+    const handSize = Math.hypot(pts[0].x-pts[9].x, pts[0].y-pts[9].y) || 1;
+    const pinchDist = Math.hypot(pts[4].x-pts[8].x, pts[4].y-pts[8].y) / handSize;
+    // cursor = midpoint thumb/index, smoothed
+    const tx = (pts[4].x+pts[8].x)/2, ty = (pts[4].y+pts[8].y)/2;
+    let p = handPointers[key];
+    if(!p){ p = handPointers[key] = {x:tx,y:ty,pinch:false,grab:null,miss:0}; }
+    p.miss = 0;
+    const a = p.grab ? .55 : .4;
+    p.x += (tx-p.x)*a; p.y += (ty-p.y)*a;
+    // hysteresis
+    if (!p.pinch && pinchDist < .32){ p.pinch = true; grabStart(p); }
+    else if (p.pinch && pinchDist > .5){ p.pinch = false; grabEnd(p); }
+    grabMove(p);
+    drawHand(pts, p);
+  });
+
+  // release hands that vanished (with a short grace period)
+  for (const k in handPointers){
+    if (seen.has(k)) continue;
+    const p = handPointers[k];
+    if (++p.miss > 8){ grabEnd(p); delete handPointers[k]; }
+  }
+
+  // hover highlight
+  tiles.forEach(t=>t.el.classList.remove("hover"));
+  Object.values(handPointers).forEach(p=>{ if(!p.grab){ const t=tileAt(p.x,p.y); if(t) t.el.classList.add("hover"); }});
+}
+
+const BONES = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[0,17],[17,18],[18,19],[19,20]];
+function drawHand(pts, p){
+  ctx.lineWidth = 2; ctx.strokeStyle = "rgba(56,225,255,.55)";
+  ctx.shadowColor = "#38e1ff"; ctx.shadowBlur = 8;
+  ctx.beginPath(); BONES.forEach(([a,b])=>{ctx.moveTo(pts[a].x,pts[a].y);ctx.lineTo(pts[b].x,pts[b].y)}); ctx.stroke();
+  ctx.fillStyle = "#bff6ff"; pts.forEach(q=>{ctx.beginPath();ctx.arc(q.x,q.y,2.5,0,7);ctx.fill()});
+  // cursor ring
+  const col = p.pinch ? "#ffcf4a" : "#38e1ff";
+  ctx.shadowColor = col; ctx.strokeStyle = col; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(p.x,p.y,p.pinch?10:18,0,7); ctx.stroke();
+  if (p.pinch){ ctx.fillStyle = col; ctx.beginPath(); ctx.arc(p.x,p.y,4,0,7); ctx.fill(); }
+  ctx.shadowBlur = 0;
+}
+</script>
+</body>
+</html>
