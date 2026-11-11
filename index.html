@@ -334,12 +334,13 @@ function move(p){
 
 // mouse & touch
 const mouse = {x:0,y:0,id:"mouse"};
-addEventListener("mousedown",e=>{mouse.x=e.clientX;mouse.y=e.clientY;down(mouse)});
+addEventListener("mousedown",e=>{if(onStart(e))return;mouse.x=e.clientX;mouse.y=e.clientY;down(mouse)});
 addEventListener("mousemove",e=>{mouse.x=e.clientX;mouse.y=e.clientY;move(mouse)});
 addEventListener("mouseup",()=>up(mouse));
-addEventListener("touchstart",e=>{const t=e.touches[0];mouse.x=t.clientX;mouse.y=t.clientY;down(mouse);e.preventDefault()},{passive:false});
-addEventListener("touchmove",e=>{const t=e.touches[0];mouse.x=t.clientX;mouse.y=t.clientY;move(mouse);e.preventDefault()},{passive:false});
-addEventListener("touchend",e=>{up(mouse);e.preventDefault()},{passive:false});
+const onStart = e => !!document.getElementById("start")?.contains(e.target);
+addEventListener("touchstart",e=>{if(onStart(e))return;const t=e.touches[0];mouse.x=t.clientX;mouse.y=t.clientY;down(mouse);e.preventDefault()},{passive:false});
+addEventListener("touchmove",e=>{if(onStart(e))return;const t=e.touches[0];mouse.x=t.clientX;mouse.y=t.clientY;move(mouse);e.preventDefault()},{passive:false});
+addEventListener("touchend",e=>{if(onStart(e))return;up(mouse);e.preventDefault()},{passive:false});
 addEventListener("keydown",e=>{ if(e.key==="ArrowLeft") switchPage(-1); if(e.key==="ArrowRight") switchPage(1); if(e.key==="Escape") closeLauncher(); });
 
 // ================= Camera + MediaPipe =================
